@@ -229,7 +229,7 @@ int main()
         for (int player = 0; player < 4; player++)
         {
             // TODO: receive player bid
-            // int bid =
+            int bid = -1; //Update
             gamestate->clients[player].bid = bid;
         }
 
@@ -237,26 +237,29 @@ int main()
         int cards_played = 1;
         while (cards_played++ <= 13)
         {
+            for (int player_num = 0; player_num < 4; player_num++) {
+                if (gamestate->num_bots < player_num + 1) {
+                    /* If we are a real player*/
 
+                    //TODO: Send message asking for card to play
+                    // TODO: Receive card played
+                    // int card_played =
+                    // TODO: check if valid card
+                    bool is_legal = true; //Update
+                    if (is_legal) {
+                        // TODO: update game_state based on move
+                        // TODO: broadcast the message
+                    } else {
+                        //TODO: send message saying move is illegal, request again
+                    }
+
+                } else {
+
+                } // Bot
+            }
         }
     }
 
-    //         // Receive bids in clockwise order
-
-    //         // Repeat x4:
-    //         // Check if bot_client, do other stuff if is
-
-    //         // Receive current players move
-
-    //         // Check that move is legal
-
-    //         // Update gamestate based on move
-
-    //         // Broadcast the move to clients
-    //     }
-    //     // Update points based on bid/ tricks won, check tricks over
-    //     // Broadcast points total
-    // }
 
     // if (gamestate->total_score_team1 > gamestate->total_score_team2)
     // {
