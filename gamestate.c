@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define END_SCORE 500
 
@@ -15,6 +17,7 @@ typedef struct gamestate
 {
     client_t *clients;
     int *bot_clients;
+    int num_bots;
     int current_leader;
     int dealer;
     bool spades_broken;
@@ -27,7 +30,7 @@ typedef struct gamestate
 
 } gamestate_t;
 
-gamestate_t *init_game()
+gamestate_t *init_game(int num_bots)
 {
     gamestate_t *state = malloc(sizeof(gamestate_t));
 
@@ -37,7 +40,7 @@ gamestate_t *init_game()
     {
         client_t *client = malloc(sizeof(client_t));
         client->client_num = i;
-        client->client_hand = calloc(sizeof(int) * 13);
+        client->client_hand = malloc(sizeof(int) * 13);
         // TODO: Initialize client hand
         client->bid = -1;
         client->points = 0;
@@ -45,7 +48,10 @@ gamestate_t *init_game()
     }
 
     // TODO: Check incoming connections, assign bots to 4 - |incoming connections|
-    int *bot_clients = malloc(sizeof(int) * 4);
+    int *bot_clients = malloc(sizeof(int) * num_bots);
+    for (int i = 0; i < num_bots; i++) {
+        bot_clients[i] = i;
+    } // Note that this means the first num_bots number of clients will be assigned to be bots
 
     int current_leader = -1;
 
@@ -67,6 +73,13 @@ gamestate_t *init_game()
     return state;
 }
 
+void swap(int i, int j, int *arr)
+{
+    int temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+}
+
 void shuffle(int *cards)
 {
     for (int i = 0; i < 52; i++)
@@ -76,132 +89,183 @@ void shuffle(int *cards)
     }
 }
 
-void swap(int i, int j, int *arr)
+char *format_hand(int *hand, int size)
 {
-    int temp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = temp;
+    int element = 1;
+
+    // Sort the cards using insertion sort
+    while (element < size)
+    {
+        for (int j = element; j > 0; j--)
+        {
+            if (hand[j] < hand[j - 1])
+            {
+                swap(j, j - 1, hand);
+            }
+            else
+            {
+                element++;
+                break;
+            }
+        }
+    }
+
+    // Format the cards into a character array
+    char *msg = malloc(sizeof(char) * 256);
+
+    char *dashes = malloc(sizeof(char) * size * 3 + 1);
+
+    for (int i = 0; i < size * 3 + 1; i++)
+    {
+        strcat(dashes, "-");
+    }
+    strcat(dashes, "\n");
+
+    strcat(msg, dashes);
+    strcat(msg, "|");
+
+    for (int i = 0; i < size; i++)
+    {
+        int card = hand[i];
+        int suit = card / 13;
+        int num = (card % 13) + 1;
+
+        // Citation: https://stackoverflow.com/questions/27133508/how-to-print-spades-hearts-diamonds-etc-in-c-and-linux
+        char *suit_chars[4] = {"\xE2\x99\xA0", "\xE2\x99\xA3", "\xE2\x99\xA5", "\xE2\x99\xA6"};
+
+        char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+
+        strcat(msg, suit_chars[suit]);
+        strcat(msg, formatted_nums[num]);
+        strcat(msg, "|");
+    }
+    strcat(msg, "\n");
+    strcat(msg, dashes);
+
+    return msg;
 }
 
-int main()
+int *create_cards()
 {
-    gamestate_t *gamestate = init_game();
     int *cards = malloc(sizeof(int) * 52);
     for (int i = 0; i < 52; i++)
     {
         cards[i] = i;
     }
+}
+
+void update_dealer_and_lead_player(gamestate_t *state)
+{
     srand(time(NULL));
+
+    if (state->dealer == -1)
+    {
+        state->dealer = rand() % 4;
+    }
+    else
+    {
+        state->dealer++;
+        if (state->dealer >= 4)
+        {
+            state->dealer = 0;
+        }
+    }
+    state->current_player = state->dealer + 1;
+    if (state->current_player >= 4)
+    {
+        state->current_player = 0;
+    }
+}
+
+void deal_cards(gamestate_t *state, int *cards)
+{
+    for (int i = 0; i < 52; i++)
+    {
+        if (i < 13)
+        {
+            state->clients[0].client_hand[i] = cards[i];
+        }
+        else if (i >= 13 && i < 26)
+        {
+            state->clients[1].client_hand[(i - 13)] = cards[i];
+        }
+        else if (i >= 26 && i < 39)
+        {
+            state->clients[2].client_hand[(i - 26)] = cards[i];
+        }
+        else if (i >= 39)
+        {
+            state->clients[3].client_hand[(i - 39)] = cards[i];
+        }
+    }
+}
+
+int main()
+{
+    // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
+    // char *formatted_hand = format_hand(hand, 12);
+    // printf("Formatted hand:\n%s\n", formatted_hand);
+
+    // TODO: Receive number of bots in game
+    // int bot_num =
+    gamestate_t *gamestate = init_game(bot_num);
+    int *cards = create_cards();
     while ((gamestate->total_score_team1 < END_SCORE) && (gamestate->total_score_team2 < END_SCORE))
     {
+        update_dealer_and_lead_player(gamestate);
+        // Randomly choose the first dealer, set current player to be player to the left
+
+        shuffle(cards);
+
+        deal_cards(gamestate, cards);
+
+        for (int player = 0; player < 4; player++)
+        {
+            char *player_hand = format_hand(gamestate->clients[player].client_hand, 13); // TODO: update hand size with new field
+
+            // TODO: send hand
+        }
+
+        for (int player = 0; player < 4; player++)
+        {
+            // TODO: receive player bid
+            // int bid =
+            gamestate->clients[player].bid = bid;
+        }
 
         /* For each hand, do the following:*/
         int cards_played = 1;
         while (cards_played++ <= 13)
         {
-            // Randomly choose the first dealer, set current player to be player to the left
-            if (gamestate->dealer == -1)
-            {
-                gamestate->dealer = rand() % 4;
-            }
-            else
-            {
-                gamestate->dealer++;
-                if (gamestate->dealer >= 4)
-                {
-                    gamestate->dealer = 0;
-                }
-            }
-            gamestate->current_player = gamestate->dealer + 1;
-            if (gamestate->current_player >= 4)
-            {
-                gamestate->current_player = 0;
-            }
 
-            shuffle(cards);
-
-            for (int i = 0; i < 52; i++)
-            {
-                if (i < 13)
-                {
-                    gamestate->clients[0].client_hand[i] = cards[i];
-                }
-                else if (i >= 13 && i < 26)
-                {
-                    gamestate->clients[1].client_hand[(i - 13)] = cards[i];
-                }
-                else if (i >= 26 && i < 39)
-                {
-                    gamestate->clients[2].client_hand[(i - 26)] = cards[i];
-                }
-                else if (i >= 39)
-                {
-                    gamestate->clients[3].client_hand[(i - 39)] = cards[i];
-                }
-            }
         }
     }
 
-    // Send players their hands
-    for (int i = 0; i < 4; i++)
-    {
-        int element = 1;
-        while (element < 13)
-        {
-            for (int j = element; j > 0; j--)
-            {
-                if (gamestate->clients[i].client_hand[j] > gamestate->clients[i].client_hand[j - 1])
-                {
-                    swap(j, j - 1, gamestate->clients[i].client_hand);
-                }
-                else
-                {
-                    element++;
-                    break;
-                }
-            }
-        }
-    }
+    //         // Receive bids in clockwise order
 
-    // for (int i = 0; i < 4; i++) {
-    //     char* msg = "";
-    //     for (int j = 0; j < 13; j++) {
-    //         int card = gamestate->clients[i].client_hand[j];
-    //         // Order: spades, clubs, hearts, diamonds
-    //         int suit = card / 13;
-    //         switch(suit) {
-    //             case 0: 
-    //                 strcat(msg, '')
-    //         }
+    //         // Repeat x4:
+    //         // Check if bot_client, do other stuff if is
+
+    //         // Receive current players move
+
+    //         // Check that move is legal
+
+    //         // Update gamestate based on move
+
+    //         // Broadcast the move to clients
     //     }
+    //     // Update points based on bid/ tricks won, check tricks over
+    //     // Broadcast points total
     // }
 
+    // if (gamestate->total_score_team1 > gamestate->total_score_team2)
+    // {
+    //     // Broadcast gamewinner team 1 to clients
+    // }
+    // else
+    // {
+    //     // Broadcast other winner to clients.
+    // }
 
-    // Receive bids in clockwise order
-
-    // Repeat x4:
-    // Check if bot_client, do other stuff if is
-
-    // Receive current players move
-
-    // Check that move is legal
-
-    // Update gamestate based on move
-
-    // Broadcast the move to clients
-}
-// Update points based on bid/ tricks won, check tricks over
-// Broadcast points total
-}
-
-if (gamestate->total_score_team1 > gamestate->total_score_team2)
-{
-    // Broadcast gamewinner team 1 to clients
-}
-else
-{
-    // Broadcast other winner to clients.
-}
-
-return 0;
+    return 0;
 }
