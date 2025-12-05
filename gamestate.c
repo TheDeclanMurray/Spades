@@ -207,7 +207,7 @@ int main()
     // printf("Formatted hand:\n%s\n", formatted_hand);
 
     // TODO: Receive number of bots in game
-    // int bot_num =
+    int bot_num = 0;
     gamestate_t *gamestate = init_game(bot_num);
     int *cards = create_cards();
     while ((gamestate->total_score_team1 < END_SCORE) && (gamestate->total_score_team2 < END_SCORE))
