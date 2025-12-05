@@ -254,6 +254,19 @@ int main()
                     }
 
                 } else {
+                    int* legal_moves = malloc(sizeof(int) * gamestate->clients[player_num].hand_size);
+                    int num_legal_moves = 0;
+                    int move;
+                    for (int i = 0; i < gamestate->clients[player_num].hand_size; i++) {
+                        if (is_legal(gamestate->clients[player_num].client_hand[i])) {
+                            legal_moves[num_legal_moves++] = gamestate->clients[player_num].client_hand[i];
+                        }
+
+                    }
+                    move = legal_moves[rand() % num_legal_moves];
+                    // TODO: Apply the move
+
+                    free(legal_moves);
 
                 } // Bot
             }
