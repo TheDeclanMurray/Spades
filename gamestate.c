@@ -29,15 +29,19 @@ typedef struct gamestate
     int num_bots;
 
 
-    int current_leader;
+    int current_leader; //updated
     int dealer;
     bool spades_broken;
-    int trick_suit;
-    int trick_high;
+    int trick_suit; //updated
+    int trick_high; //updated
+    int highest_spade; //updated
+
+    //The following could replace trick_suit and trick_high
+    int* played_cards; //TODO: update in playMove
 
     int total_score_team1;
     int total_score_team2;
-    int current_player;
+    int current_player; //updated
 
     int tricks_over_team1;
     int tricks_over_team2;
@@ -109,6 +113,8 @@ gamestate_t *init_game(int num_bots)
     state->trick_suit = -1;
     state->tricks_over_team1 = 0;
     state->tricks_over_team2 = 0;
+    state->highest_spade = -1;
+    state->played_cards = malloc(sizeof(int) * 4);
 
     return state;
 }
@@ -116,7 +122,7 @@ gamestate_t *init_game(int num_bots)
 /**
  * Returns true if card is legal play false otherwise
  */
-bool isLegalMove(gamestate_t* gs, int card) {
+bool isLegalMove(gamestate_t* gs, int card){
     // TODO: server blocks wrong player from playing card
     int activePlayer = gs->current_player;
     int* hand = gs->clients[activePlayer].client_hand;
@@ -273,6 +279,9 @@ void update_dealer_and_lead_player(gamestate_t *state)
 
 void deal_cards(gamestate_t *state, int *cards)
 {
+    for (int i = 0; i < 4; i++) {
+        state->clients[i].hand_size = 13;
+    }
     for (int i = 0; i < 52; i++)
     {
         if (i < 13)
@@ -294,7 +303,77 @@ void deal_cards(gamestate_t *state, int *cards)
     }
 }
 
-int run_game(gamestate_t *gamestate)
+void playMove(gamestate_t* state, int card_played) {
+    /* Update the suit if first time played*/
+    if (state->trick_suit == -1) {
+        state->trick_suit = findSuit(card_played);
+    }
+
+    if ((findRank(card_played) > state->trick_high) && (findSuit(card_played) == state->trick_suit) && (state->highest_spade == -1)) {
+        state->trick_high = findRank(card_played);
+        // player is now winning the trick
+        state->current_leader = state->current_player;
+    } else if (findSuit(card_played) == 0) {
+        state->spades_broken = true;
+        /* It's a spade*/
+        if (findRank(card_played) > state->highest_spade) {
+            state->highest_spade = findRank(card_played);
+            // player is now winning the trick
+            state->current_leader = state->current_player;
+        }
+    }
+    client_t client = state->clients[state->current_player];
+
+    for (int i = 0; i < client.hand_size; i++) {
+        if (client.client_hand[i] == card_played) {
+            client.client_hand[i] = -1;
+        }
+    }
+
+    client.hand_size--;
+
+    state->played_cards[state->current_player] = card_played;
+    if (state->current_player == 3) {
+        state->current_player = 0;
+    } else {
+        state->current_player++;
+    }
+    
+
+
+}
+
+void update_points(gamestate_t* state){
+    int total_points1 = state -> clients[0].points + state -> clients[2].points;
+    int total_bids1 = state -> clients[0].bid + state -> clients[2].bid;
+    if(total_bids1 <= total_points1){
+        state -> tricks_over_team1 += total_points1-total_bids1;
+        state -> total_score_team1 += total_points1*10 + (total_points1-total_bids1);
+    }
+    if(total_bids1 > total_points1){
+        state -> total_score_team1 -= total_points1*10;
+    }
+    if(state -> tricks_over_team1 >= 10){
+        state -> total_score_team1 -= 100;
+        state -> tricks_over_team1 -= 10;
+    }
+
+    int total_points2 = state -> clients[1].points + state -> clients[3].points;
+    int total_bids2 = state -> clients[1].bid + state -> clients[3].bid;
+    if(total_bids2 <= total_points2){
+        state -> tricks_over_team2 += total_points1-total_bids2;
+        state -> total_score_team2 += total_points2*10 + (total_points2-total_bids2);
+    }
+    if(total_bids2 > total_points2){
+        state -> total_score_team2 -= total_points2*10;
+    }
+    if(state -> tricks_over_team2 >= 10){
+        state -> total_score_team2 -= 100;
+        state -> tricks_over_team2 -= 10;
+    }
+}
+
+int run_game(gamestate_t* gamestate)
 {
     // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
     // char *formatted_hand = format_hand(hand, 12);
@@ -312,8 +391,7 @@ int run_game(gamestate_t *gamestate)
 
         for (int player = 0; player < 4; player++)
         {
-            char *player_hand = format_hand(gamestate->clients[player].client_hand, 13); // TODO: update hand size with new field
-
+            char *player_hand = format_hand(gamestate->clients[player].client_hand, gamestate->clients[player].hand_size);
             // TODO: send hand
         }
 
@@ -334,11 +412,11 @@ int run_game(gamestate_t *gamestate)
 
                     //TODO: Send message asking for card to play
                     // TODO: Receive card played
-                    // int card_played =
-                    // TODO: check if valid card
-                    bool is_legal = true; //Update
+                    int card_played = -1;
+                    bool is_legal = isLegalMove(gamestate, card_played); //Update
                     if (is_legal) {
-                        // TODO: update game_state based on move
+                        playMove(gamestate, card_played);
+
                         // TODO: broadcast the message
                     } else {
                         //TODO: send message saying move is illegal, request again
@@ -355,12 +433,36 @@ int run_game(gamestate_t *gamestate)
 
                     }
                     move = legal_moves[rand() % num_legal_moves];
-                    // TODO: Apply the move
+                    playMove(gamestate, move);
 
                     free(legal_moves);
 
                 } // Bot
             }
+            /* Update after each hand*/
+            //Increment points for winning client
+            gamestate->clients[gamestate->current_leader].points++;
+            
+            gamestate->trick_suit = -1;
+            gamestate->trick_high = -1;
+            gamestate->highest_spade = -1;
+
+            for (int i = 0; i < 4; i++) {
+                gamestate->played_cards[i] = 0;
+            }
+
+            gamestate->current_player = gamestate->current_leader;
+
+            gamestate->current_leader = -1;
+
+        }
+        /*Update after a round*/
+        gamestate->spades_broken = false;
+        update_points(gamestate);
+
+        for (int i = 0; i < 4; i++) {
+            gamestate->clients[i].bid = -1;
+            gamestate->clients[i].points = 0;
         }
     }
 
