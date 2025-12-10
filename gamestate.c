@@ -5,10 +5,18 @@
 
 #define END_SCORE 500
 
+typedef enum {
+    SPADE = 0,
+    CLUB = 1,
+    HEART = 2,
+    DIAMOND = 3
+} SUITE;
+
 typedef struct client
 {
     int client_num;
     int *client_hand;
+    int hand_size;
     int bid;
     int points;
 } client_t;
@@ -18,9 +26,14 @@ typedef struct gamestate
     client_t *clients;
     int *bot_clients;
     int num_bots;
+
+
     int current_leader;
     int dealer;
     bool spades_broken;
+    int trick_suit;
+    int trick_high;
+
     int total_score_team1;
     int total_score_team2;
     int current_player;
@@ -29,6 +42,29 @@ typedef struct gamestate
     int tricks_over_team2;
 
 } gamestate_t;
+
+/**
+ * Returns the suit of a card
+ * 0 = Spades
+ * 1 = Clubs
+ * 2 = Hearts
+ * 3 = Diamonds
+ */
+int findSuit(int card) {
+    return card / 13;
+}
+
+/**
+ * 1 = Ace
+ * 2-10 the same
+ * 11 = Jack
+ * 12 = Queen
+ * 13 = King
+ */
+int findRank(int card) {
+    return card % 13 + 1;
+}
+
 
 gamestate_t *init_game(int num_bots)
 {
@@ -44,6 +80,7 @@ gamestate_t *init_game(int num_bots)
         // TODO: Initialize client hand
         client->bid = -1;
         client->points = 0;
+        client->hand_size = 13;
         clients[i] = *client;
     }
 
@@ -67,10 +104,65 @@ gamestate_t *init_game(int num_bots)
     state->spades_broken = spades_broken;
     state->total_score_team1 = 0;
     state->total_score_team2 = 0;
+    state->trick_high = -1;
+    state->trick_suit = -1;
     state->tricks_over_team1 = 0;
     state->tricks_over_team2 = 0;
 
     return state;
+}
+
+/**
+ * Returns true if card is legal play false otherwise
+ */
+bool isLegalMove(gamestate_t gs, int card){
+    // TODO: server blocks wrong player from playing card
+    int activePlayer = gs.current_player;
+    int* hand = gs.clients[activePlayer].client_hand;
+    int hand_size = gs.clients[activePlayer].hand_size;
+    bool hasCard = false;
+    bool hasSuit = false;
+    int trick_suit = gs.trick_suit;
+
+    //checks hand for card
+    for(int i = 0; i < hand_size; i++) {
+        if (card == hand[i]){
+            hasCard = true;
+        }
+    }
+    //if player doesn't have card return flase
+    if(hasCard == false) {
+        return false;
+    }
+
+    //checks if player is active player
+    if(activePlayer == gs.current_leader) {
+        //checks if spades are broken if the card played is a spade
+        if((findSuit(card) == SPADE) && !gs.spades_broken) {
+            //checks if player only has spades to make this a legal move
+            for(int i = 0; i < hand_size; i++) {
+                if(findSuit(hand[i]) != SPADE) {
+                    //returns false if spade is lead while other cards are in hand
+                    return false;
+                }
+            }
+        }
+        //returns true otherwise
+        return true;
+    }
+
+    //finds suit of card
+    for (int i = 0; i < hand_size; i++){
+        if(findSuit(hand[i]) == trick_suit) {
+            hasSuit = true;
+        }
+    }
+
+    //if they have suit but played a card that doesn't match it
+    if(hasSuit && (findSuit(card) != trick_suit)) {
+        return false;
+    }
+    return true;
 }
 
 void swap(int i, int j, int *arr)
