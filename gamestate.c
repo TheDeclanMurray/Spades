@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define END_SCORE 500
 
@@ -250,6 +251,7 @@ int *create_cards()
     {
         cards[i] = i;
     }
+    return cards;
 }
 
 void update_dealer_and_lead_player(gamestate_t *state)
@@ -315,7 +317,7 @@ void playMove(gamestate_t* state, int card_played) {
         state->spades_broken = true;
         /* It's a spade*/
         if (findRank(card_played) > state->highest_spade) {
-            state->highest_spade == findRank(card_played);
+            state->highest_spade = findRank(card_played);
             // player is now winning the trick
             state->current_leader = state->current_player;
         }
@@ -330,7 +332,7 @@ void playMove(gamestate_t* state, int card_played) {
 
     client.hand_size--;
 
-    state->played_cards[state->current_player];
+    state->played_cards[state->current_player] = card_played;
     if (state->current_player == 3) {
         state->current_player = 0;
     } else {
@@ -371,15 +373,12 @@ void update_points(gamestate_t* state){
     }
 }
 
-int main()
+int run_game(gamestate_t* gamestate)
 {
     // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
     // char *formatted_hand = format_hand(hand, 12);
     // printf("Formatted hand:\n%s\n", formatted_hand);
 
-    // TODO: Receive number of bots in game
-    int bot_num = 0;
-    gamestate_t *gamestate = init_game(bot_num);
     int *cards = create_cards();
     while ((gamestate->total_score_team1 < END_SCORE) && (gamestate->total_score_team2 < END_SCORE))
     {
