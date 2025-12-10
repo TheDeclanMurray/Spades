@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define END_SCORE 500
 
@@ -115,14 +116,14 @@ gamestate_t *init_game(int num_bots)
 /**
  * Returns true if card is legal play false otherwise
  */
-bool isLegalMove(gamestate_t gs, int card){
+bool isLegalMove(gamestate_t* gs, int card) {
     // TODO: server blocks wrong player from playing card
-    int activePlayer = gs.current_player;
-    int* hand = gs.clients[activePlayer].client_hand;
-    int hand_size = gs.clients[activePlayer].hand_size;
+    int activePlayer = gs->current_player;
+    int* hand = gs->clients[activePlayer].client_hand;
+    int hand_size = gs->clients[activePlayer].hand_size;
     bool hasCard = false;
     bool hasSuit = false;
-    int trick_suit = gs.trick_suit;
+    int trick_suit = gs->trick_suit;
 
     //checks hand for card
     for(int i = 0; i < hand_size; i++) {
@@ -136,9 +137,9 @@ bool isLegalMove(gamestate_t gs, int card){
     }
 
     //checks if player is active player
-    if(activePlayer == gs.current_leader) {
+    if(activePlayer == gs->current_leader) {
         //checks if spades are broken if the card played is a spade
-        if((findSuit(card) == SPADE) && !gs.spades_broken) {
+        if((findSuit(card) == SPADE) && !gs->spades_broken) {
             //checks if player only has spades to make this a legal move
             for(int i = 0; i < hand_size; i++) {
                 if(findSuit(hand[i]) != SPADE) {
@@ -244,6 +245,7 @@ int *create_cards()
     {
         cards[i] = i;
     }
+    return cards;
 }
 
 void update_dealer_and_lead_player(gamestate_t *state)
@@ -292,15 +294,12 @@ void deal_cards(gamestate_t *state, int *cards)
     }
 }
 
-int main()
+int run_game(gamestate_t *gamestate)
 {
     // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
     // char *formatted_hand = format_hand(hand, 12);
     // printf("Formatted hand:\n%s\n", formatted_hand);
 
-    // TODO: Receive number of bots in game
-    int bot_num = 0;
-    gamestate_t *gamestate = init_game(bot_num);
     int *cards = create_cards();
     while ((gamestate->total_score_team1 < END_SCORE) && (gamestate->total_score_team2 < END_SCORE))
     {
@@ -350,7 +349,7 @@ int main()
                     int num_legal_moves = 0;
                     int move;
                     for (int i = 0; i < gamestate->clients[player_num].hand_size; i++) {
-                        if (is_legal(gamestate->clients[player_num].client_hand[i])) {
+                        if (isLegalMove(gamestate, gamestate->clients[player_num].client_hand[i])) {
                             legal_moves[num_legal_moves++] = gamestate->clients[player_num].client_hand[i];
                         }
 
