@@ -3,50 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
-#define END_SCORE 500
-
-typedef enum {
-    SPADE = 0,
-    CLUB = 1,
-    HEART = 2,
-    DIAMOND = 3
-} SUITE;
-
-typedef struct client
-{
-    int client_num;
-    int *client_hand;
-    int hand_size;
-    int bid;
-    int points;
-} client_t;
-
-typedef struct gamestate
-{
-    client_t *clients;
-    int *bot_clients;
-    int num_bots;
-
-
-    int current_leader; //updated
-    int dealer;
-    bool spades_broken;
-    int trick_suit; //updated
-    int trick_high; //updated
-    int highest_spade; //updated
-
-    //The following could replace trick_suit and trick_high
-    int* played_cards; //TODO: update in playMove
-
-    int total_score_team1;
-    int total_score_team2;
-    int current_player; //updated
-
-    int tricks_over_team1;
-    int tricks_over_team2;
-
-} gamestate_t;
+#include <pthread.h>
+#include <stdint.h>
+#include "gamestate.h"
+#include "send_messages.h"
 
 /**
  * Returns the suit of a card
@@ -115,6 +75,9 @@ gamestate_t *init_game(int num_bots)
     state->tricks_over_team2 = 0;
     state->highest_spade = -1;
     state->played_cards = malloc(sizeof(int) * 4);
+    //state->sockets = malloc(sizeof(intptr_t) *4);
+    state->usernames = malloc(sizeof(char *) * 4);
+    
 
     return state;
 }
@@ -183,7 +146,7 @@ void shuffle(int *cards)
 {
     for (int i = 0; i < 52; i++)
     {
-        int j = rand() % (52 - (i + 1));
+        int j = rand() % (52 - (i)) -1;
         swap(i, j, cards);
     }
 }
@@ -373,7 +336,7 @@ void update_points(gamestate_t* state){
     }
 }
 
-int run_game(gamestate_t* gamestate)
+int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond, char* action)
 {
     // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
     // char *formatted_hand = format_hand(hand, 12);
@@ -384,42 +347,59 @@ int run_game(gamestate_t* gamestate)
     {
         update_dealer_and_lead_player(gamestate);
         // Randomly choose the first dealer, set current player to be player to the left
-
+        printf("preshuffle\n");
         shuffle(cards);
-
+        printf("predeal\n");
         deal_cards(gamestate, cards);
-
+        printf("postdeal\n");
         for (int player = 0; player < 4; player++)
         {
+            printf("prehandformat\n");
             char *player_hand = format_hand(gamestate->clients[player].client_hand, gamestate->clients[player].hand_size);
+            printf("posthandformat\n");
             // TODO: send hand
         }
 
         for (int player = 0; player < 4; player++)
         {
+            printf("prebid\n");
             // TODO: receive player bid
             int bid = -1; //Update
             gamestate->clients[player].bid = bid;
+            printf("postbid\n");
         }
 
         /* For each hand, do the following:*/
         int cards_played = 1;
+        printf("start playing cards\n");
         while (cards_played++ <= 13)
         {
             for (int player_num = 0; player_num < 4; player_num++) {
+                printf("go through players\n");
                 if (gamestate->num_bots < player_num + 1) {
                     /* If we are a real player*/
+                    printf("initiate lock\n");
+                    pthread_mutex_lock(lock);
+                    pthread_cond_wait(cond, lock);
+                    pthread_mutex_unlock(lock);
 
                     //TODO: Send message asking for card to play
                     // TODO: Receive card played
-                    int card_played = -1;
+                    printf("wait for move\n");
+                    int card_played = atoi(action);
                     bool is_legal = isLegalMove(gamestate, card_played); //Update
                     if (is_legal) {
                         playMove(gamestate, card_played);
 
                         // TODO: broadcast the message
+                        char* test_message = "working\n";
+                        printf("broadcasting\n");
+                        broadcast(test_message, gamestate -> sockets);
                     } else {
                         //TODO: send message saying move is illegal, request again
+                        char* bad_message = "illegal move\n";
+                        printf("dming\n");
+                        send_dm(bad_message, gamestate -> sockets[gamestate -> current_player]);
                     }
 
                 } else {
@@ -456,10 +436,11 @@ int run_game(gamestate_t* gamestate)
             gamestate->current_leader = -1;
 
         }
+        printf("update gamestate\n");
         /*Update after a round*/
         gamestate->spades_broken = false;
         update_points(gamestate);
-
+        printf("update points\n");
         for (int i = 0; i < 4; i++) {
             gamestate->clients[i].bid = -1;
             gamestate->clients[i].points = 0;
