@@ -121,7 +121,7 @@ bool isLegalMove(gamestate_t* gs, int card){
         return true;
     }
 
-    //finds suit of card
+    //finds if they have trick_suit in hand
     for (int i = 0; i < hand_size; i++){
         if(findSuit(hand[i]) == trick_suit) {
             hasSuit = true;
@@ -144,11 +144,21 @@ void swap(int i, int j, int *arr)
 
 void shuffle(int *cards)
 {
-    for (int i = 0; i < 52; i++)
-    {
-        int j = rand() % (52 - (i)) -1;
+    for (int i = 51; i > 0; i--) {
+        int j = rand() % (i + 1);
         swap(i, j, cards);
     }
+}
+
+char *find_card(int card) {
+        int suit = card / 13;
+        int num = (card % 13) + 1;
+
+        // Citation: https://stackoverflow.com/questions/27133508/how-to-print-spades-hearts-diamonds-etc-in-c-and-linux
+        char *suit_chars[4] = {"\xE2\x99\xA0", "\xE2\x99\xA3", "\xE2\x99\xA5", "\xE2\x99\xA6"};
+
+        char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+    return strcat(suit_chars[suit], formatted_nums[num]);
 }
 
 char *format_hand(int *hand, int size)
@@ -197,12 +207,15 @@ char *format_hand(int *hand, int size)
 
         char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
 
+        //find_card(hand[i]);
+
         strcat(msg, suit_chars[suit]);
         strcat(msg, formatted_nums[num]);
         strcat(msg, "|");
     }
     strcat(msg, "\n");
     strcat(msg, dashes);
+    free(dashes);
 
     return msg;
 }
@@ -290,6 +303,9 @@ void playMove(gamestate_t* state, int card_played) {
     for (int i = 0; i < client.hand_size; i++) {
         if (client.client_hand[i] == card_played) {
             client.client_hand[i] = -1;
+            client.hand_size--;
+            swap(i, client.hand_size - 1, client.client_hand);
+            client.client_hand = realloc(client.client_hand, client.hand_size * sizeof(int));
         }
     }
 
@@ -347,59 +363,79 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
     {
         update_dealer_and_lead_player(gamestate);
         // Randomly choose the first dealer, set current player to be player to the left
-        printf("preshuffle\n");
         shuffle(cards);
-        printf("predeal\n");
         deal_cards(gamestate, cards);
-        printf("postdeal\n");
         for (int player = 0; player < 4; player++)
         {
-            printf("prehandformat\n");
             char *player_hand = format_hand(gamestate->clients[player].client_hand, gamestate->clients[player].hand_size);
-            printf("posthandformat\n");
-            // TODO: send hand
+
+            /* Send the hand to the player and free the mem*/
+            send_dm(player_hand, gamestate->sockets[player]);
+            free(player_hand);
         }
+        char init_message[256];
+        sprintf(init_message, "Player %d leads \n", gamestate->current_player);
+        broadcast(init_message, gamestate->sockets);
 
         for (int player = 0; player < 4; player++)
         {
-            printf("prebid\n");
             // TODO: receive player bid
             int bid = -1; //Update
             gamestate->clients[player].bid = bid;
-            printf("postbid\n");
         }
 
         /* For each hand, do the following:*/
         int cards_played = 1;
-        printf("start playing cards\n");
         while (cards_played++ <= 13)
         {
             for (int player_num = 0; player_num < 4; player_num++) {
-                printf("go through players\n");
+
                 if (gamestate->num_bots < player_num + 1) {
                     /* If we are a real player*/
-                    printf("initiate lock\n");
                     pthread_mutex_lock(lock);
                     pthread_cond_wait(cond, lock);
                     pthread_mutex_unlock(lock);
 
                     //TODO: Send message asking for card to play
                     // TODO: Receive card played
-                    printf("wait for move\n");
-                    int card_played = atoi(action);
+                    char suit = toupper(action[0]);
+                    char* number = action + 1;
+                    int suit_num;
+
+                    switch(suit) {
+                        case('S'):
+                            suit_num = 0;
+                            break;
+                        case('C'):
+                            suit_num = 1;
+                            break;
+                        case('H'):
+                            suit_num = 2;
+                            break;
+                        default:
+                            suit_num = 3;
+                            break;
+                    }
+                    
+                    int card_played = atoi(number) + suit_num * 13 - 1;
+                    printf("%d played: %d\n", gamestate->current_player, card_played);
+                    printf("current leader is: %d\n", gamestate->current_leader);
+
                     bool is_legal = isLegalMove(gamestate, card_played); //Update
                     if (is_legal) {
                         playMove(gamestate, card_played);
-
+                        printf("current player is: %d\n", gamestate->current_player);
                         // TODO: broadcast the message
-                        char* test_message = "working\n";
-                        printf("broadcasting\n");
-                        broadcast(test_message, gamestate -> sockets);
+                        char* b_message = "working\n";
+                        char* player_hand = format_hand(gamestate->clients[player_num].client_hand, gamestate->clients[player_num].hand_size);
+                        send_dm(player_hand, gamestate->sockets[player_num]);
+                        broadcast(b_message, gamestate -> sockets);
+                        free(player_hand);
                     } else {
                         //TODO: send message saying move is illegal, request again
                         char* bad_message = "illegal move\n";
-                        printf("dming\n");
                         send_dm(bad_message, gamestate -> sockets[gamestate -> current_player]);
+                        player_num--;
                     }
 
                 } else {
