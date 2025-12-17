@@ -9,9 +9,8 @@
 #include "message.h"
 #include "socket.h"
 #include "gamestate.h"
+#include "send_messages.h"
 
-intptr_t sockets[4];
-char* usernames[4];
 int counter = 0;
 
 int bot_num = 0;
@@ -21,41 +20,13 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 char action[256];
 
-bool send_dm(char* username, char* message){
-  for (int i = 0; i < 4; i++){
-    if (sockets[i] != -1 && strcmp(usernames[i], username) == 0){
-      int rc = send_message(sockets[i], message);
-      if (rc == -1) {
-        perror("Failed to send message to client");
-        exit(EXIT_FAILURE);
-      }
-      return true;
-    }
-  }
-  return false;
-}
-
-bool broadcast(char* message){
-  for( int i = 0; i < 4; i++){
-    if (sockets[i] == -1){
-      return false;
-    }
-    int rc = send_message(sockets[i], message);
-    if (rc == -1) {
-      perror("Failed to send message to client");
-      exit(EXIT_FAILURE);
-    }
-  }
-  return true;
-}
-
 void* client_thread(void* args) {
   intptr_t client_socket_fd = (intptr_t)args;
   char* current_username;
   int current_user_num;
   for(int i = 0; i < 4; i++) {
-    if(client_socket_fd == sockets[i]) {
-      current_username = usernames[i];
+    if(client_socket_fd == state -> sockets[i]) {
+      current_username = state -> usernames[i];
       current_user_num = i;
     }
   }
@@ -74,11 +45,11 @@ void* client_thread(void* args) {
 
     // Print the message
     printf("%s sent: %s\n", current_username, message);
-
+    
     // check if its users turn
     if (state->current_player != current_user_num){
       char* rebuke = "Not your turn\n";
-      send_dm(current_username, rebuke);
+      send_dm(rebuke, state->sockets[current_user_num]);
       continue;
     }
     // set global action var to message
@@ -121,17 +92,19 @@ int main() {
   }
 
   for (int i = 0; i < 4; i++){
-    sockets[i] = -1;
+    state -> sockets[i] = -1;
   }
 
   printf("Server listening on port %u\n", port);
-  while(true) {
+
+  // adding the users
+  while(counter < 4) {
     // Wait for a client to connect
     printf("making new thread\n");
     pthread_t client;
 
     intptr_t client_socket_fd = server_socket_accept(server_socket_fd);
-    sockets[counter] = client_socket_fd;
+    state -> sockets[counter] = client_socket_fd;
     if (client_socket_fd == -1) {
       perror("accept failed");
       exit(EXIT_FAILURE);
@@ -143,13 +116,17 @@ int main() {
       perror("Failed to read message from client");
       exit(EXIT_FAILURE);
     } 
-    usernames[counter] = message;
+    state -> usernames[counter] = message;
     counter++;
-
 
     pthread_create(&client, NULL, client_thread, (void*)client_socket_fd);
   }
+  sleep(1);
+  run_game(state, &lock, &cond, action);
+
   close(server_socket_fd);
+
+
 
   return 0;
 }

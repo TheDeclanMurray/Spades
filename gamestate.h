@@ -31,19 +31,25 @@ typedef struct gamestate
     int num_bots;
 
 
-    int current_leader;
+    int current_leader; //updated
     int dealer;
     bool spades_broken;
-    int trick_suit;
-    int trick_high;
+    int trick_suit; //updated
+    int trick_high; //updated
+    int highest_spade; //updated
+
+    //The following could replace trick_suit and trick_high
+    int* played_cards; //TODO: update in playMove
 
     int total_score_team1;
     int total_score_team2;
-    int current_player;
+    int current_player; //updated
 
     int tricks_over_team1;
     int tricks_over_team2;
 
+    intptr_t sockets[4]; //sockets of players
+    char** usernames; //usernames of players
 
 } gamestate_t;
 
@@ -53,7 +59,7 @@ int findRank(int card);
 
 gamestate_t *init_game(int num_bots);
 
-bool isLegalMove(gamestate_t gs, int card);
+bool isLegalMove(gamestate_t* gs, int card);
 
 void swap(int i, int j, int *arr);
 
@@ -68,4 +74,4 @@ void update_dealer_and_lead_player(gamestate_t *state);
 void deal_cards(gamestate_t *state, int *cards);
 
 //was main
-int run_game(gamestate_t *gamestate);
+int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond, char* action);
