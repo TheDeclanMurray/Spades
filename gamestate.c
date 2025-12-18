@@ -3,50 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
-#define END_SCORE 500
-
-typedef enum {
-    SPADE = 0,
-    CLUB = 1,
-    HEART = 2,
-    DIAMOND = 3
-} SUITE;
-
-typedef struct client
-{
-    int client_num;
-    int *client_hand;
-    int hand_size;
-    int bid;
-    int points;
-} client_t;
-
-typedef struct gamestate
-{
-    client_t *clients;
-    int *bot_clients;
-    int num_bots;
-
-
-    int current_leader; //updated
-    int dealer;
-    bool spades_broken;
-    int trick_suit; //updated
-    int trick_high; //updated
-    int highest_spade; //updated
-
-    //The following could replace trick_suit and trick_high
-    int* played_cards; //TODO: update in playMove
-
-    int total_score_team1;
-    int total_score_team2;
-    int current_player; //updated
-
-    int tricks_over_team1;
-    int tricks_over_team2;
-
-} gamestate_t;
+#include <pthread.h>
+#include <stdint.h>
+#include "gamestate.h"
+#include "send_messages.h"
 
 /**
  * Returns the suit of a card
@@ -115,6 +75,9 @@ gamestate_t *init_game(int num_bots)
     state->tricks_over_team2 = 0;
     state->highest_spade = -1;
     state->played_cards = malloc(sizeof(int) * 4);
+    //state->sockets = malloc(sizeof(intptr_t) *4);
+    state->usernames = malloc(sizeof(char *) * 4);
+    
 
     return state;
 }
@@ -158,7 +121,7 @@ bool isLegalMove(gamestate_t* gs, int card){
         return true;
     }
 
-    //finds suit of card
+    //finds if they have trick_suit in hand
     for (int i = 0; i < hand_size; i++){
         if(findSuit(hand[i]) == trick_suit) {
             hasSuit = true;
@@ -181,15 +144,30 @@ void swap(int i, int j, int *arr)
 
 void shuffle(int *cards)
 {
-    for (int i = 0; i < 52; i++)
-    {
-        int j = rand() % (52 - (i + 1));
+    for (int i = 51; i > 0; i--) {
+        int j = rand() % (i + 1);
         swap(i, j, cards);
     }
 }
 
+char *find_card(int card) {
+        char* msg = malloc(sizeof(char) * 16);
+        strcpy(msg, "");
+        int suit = card / 13;
+        int num = (card % 13) + 1;
+
+        // Citation: https://stackoverflow.com/questions/27133508/how-to-print-spades-hearts-diamonds-etc-in-c-and-linux
+        char *suit_chars[4] = {"\xE2\x99\xA0", "\xE2\x99\xA3", "\xE2\x99\xA5", "\xE2\x99\xA6"};
+
+        char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+        strcat(msg, suit_chars[suit]);
+        strcat(msg, formatted_nums[num]);
+    return msg;
+}
+
 char *format_hand(int *hand, int size)
 {
+    printf("Client hand size: %d\n", size);
     int element = 1;
 
     // Sort the cards using insertion sort
@@ -210,9 +188,12 @@ char *format_hand(int *hand, int size)
     }
 
     // Format the cards into a character array
-    char *msg = malloc(sizeof(char) * 256);
+    char *msg = (char*) malloc(256 * sizeof(char));
+    strcpy(msg, "");
+    
 
-    char *dashes = malloc(sizeof(char) * size * 3 + 1);
+    char *dashes = (char*) malloc(sizeof(char) * size * 3 + 1);
+    strcpy(dashes, "");
 
     for (int i = 0; i < size * 3 + 1; i++)
     {
@@ -234,12 +215,15 @@ char *format_hand(int *hand, int size)
 
         char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
 
+        //find_card(hand[i]);
+
         strcat(msg, suit_chars[suit]);
         strcat(msg, formatted_nums[num]);
         strcat(msg, "|");
     }
     strcat(msg, "\n");
     strcat(msg, dashes);
+    free(dashes);
 
     return msg;
 }
@@ -275,6 +259,7 @@ void update_dealer_and_lead_player(gamestate_t *state)
     {
         state->current_player = 0;
     }
+    state->current_leader = state->current_player;
 }
 
 void deal_cards(gamestate_t *state, int *cards)
@@ -310,9 +295,15 @@ void playMove(gamestate_t* state, int card_played) {
     }
 
     if ((findRank(card_played) > state->trick_high) && (findSuit(card_played) == state->trick_suit) && (state->highest_spade == -1)) {
-        state->trick_high = findRank(card_played);
         // player is now winning the trick
         state->current_leader = state->current_player;
+        if (findSuit(card_played) == 0) {
+            state->highest_spade = findRank(card_played);
+            state->spades_broken = true;
+        } else {
+            state->trick_high = findRank(card_played);
+        }
+
     } else if (findSuit(card_played) == 0) {
         state->spades_broken = true;
         /* It's a spade*/
@@ -322,15 +313,16 @@ void playMove(gamestate_t* state, int card_played) {
             state->current_leader = state->current_player;
         }
     }
-    client_t client = state->clients[state->current_player];
+    client_t* client = &state->clients[state->current_player];
 
-    for (int i = 0; i < client.hand_size; i++) {
-        if (client.client_hand[i] == card_played) {
-            client.client_hand[i] = -1;
+    for (int i = 0; i < client->hand_size; i++) {
+        if (client->client_hand[i] == card_played) {
+            client->client_hand[i] = -1;
+            swap(i, client->hand_size - 1, client->client_hand);
+            client->hand_size = client->hand_size - 1;
+            client->client_hand = realloc(client->client_hand, client->hand_size * sizeof(int));
         }
     }
-
-    client.hand_size--;
 
     state->played_cards[state->current_player] = card_played;
     if (state->current_player == 3) {
@@ -338,9 +330,6 @@ void playMove(gamestate_t* state, int card_played) {
     } else {
         state->current_player++;
     }
-    
-
-
 }
 
 void update_points(gamestate_t* state){
@@ -373,27 +362,26 @@ void update_points(gamestate_t* state){
     }
 }
 
-int run_game(gamestate_t* gamestate)
+int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond, char* action)
 {
-    // int hand[13] = {0, 3, 4, 8, 25, 26, 41, 20, 16, 44, 51, 33};
-    // char *formatted_hand = format_hand(hand, 12);
-    // printf("Formatted hand:\n%s\n", formatted_hand);
-
     int *cards = create_cards();
     while ((gamestate->total_score_team1 < END_SCORE) && (gamestate->total_score_team2 < END_SCORE))
     {
         update_dealer_and_lead_player(gamestate);
         // Randomly choose the first dealer, set current player to be player to the left
-
         shuffle(cards);
-
         deal_cards(gamestate, cards);
-
         for (int player = 0; player < 4; player++)
         {
             char *player_hand = format_hand(gamestate->clients[player].client_hand, gamestate->clients[player].hand_size);
-            // TODO: send hand
+
+            /* Send the hand to the player and free the mem*/
+            send_dm(player_hand, gamestate->sockets[player]);
+            free(player_hand);
         }
+        char init_message[256];
+        sprintf(init_message, "Player %s leads \n", gamestate->usernames[gamestate->current_player]);
+        broadcast(init_message, gamestate->sockets);
 
         for (int player = 0; player < 4; player++)
         {
@@ -406,29 +394,67 @@ int run_game(gamestate_t* gamestate)
         int cards_played = 1;
         while (cards_played++ <= 13)
         {
-            for (int player_num = 0; player_num < 4; player_num++) {
-                if (gamestate->num_bots < player_num + 1) {
+            for (int j = 0; j < 4; j++) {
+
+                if (gamestate->num_bots < j + 1) { // THIS IS BROKEN DONT USE J
                     /* If we are a real player*/
+                    pthread_mutex_lock(lock);
+                    pthread_cond_wait(cond, lock);
+                    pthread_mutex_unlock(lock);
 
                     //TODO: Send message asking for card to play
                     // TODO: Receive card played
-                    int card_played = -1;
+                    char suit = toupper(action[0]);
+                    char* number = action + 1;
+                    int suit_num;
+
+                    switch(suit) {
+                        case('S'):
+                            suit_num = 0;
+                            break;
+                        case('C'):
+                            suit_num = 1;
+                            break;
+                        case('H'):
+                            suit_num = 2;
+                            break;
+                        default:
+                            suit_num = 3;
+                            break;
+                    }
+                    
+                    int card_played = atoi(number) + suit_num * 13 - 1;
+                    printf("%d played: %d\n", gamestate->current_player, card_played);
+
                     bool is_legal = isLegalMove(gamestate, card_played); //Update
+                    int real_current_player = gamestate->current_player;
                     if (is_legal) {
                         playMove(gamestate, card_played);
-
+                        printf("Current leader is: %d\n", gamestate->current_leader);
+                        printf("Current player is: %d\n", gamestate->current_player);
                         // TODO: broadcast the message
+                        // char* played_card_graphic = find_card(card_played);
+                        // // char* b_message = "working\n";
+                        // printf("%s\n", played_card_graphic);
+                        // free(played_card_graphic);
+                        char* player_hand = format_hand(gamestate->clients[real_current_player].client_hand, gamestate->clients[real_current_player].hand_size);
+                        send_dm(player_hand, gamestate->sockets[real_current_player]);
+                        // broadcast(b_message, gamestate -> sockets);
+                        free(player_hand);
                     } else {
                         //TODO: send message saying move is illegal, request again
+                        char* bad_message = "illegal move\n";
+                        send_dm(bad_message, gamestate -> sockets[gamestate -> current_player]);
+                        j--;
                     }
 
                 } else {
-                    int* legal_moves = malloc(sizeof(int) * gamestate->clients[player_num].hand_size);
+                    int* legal_moves = malloc(sizeof(int) * gamestate->clients[gamestate->current_player].hand_size);
                     int num_legal_moves = 0;
                     int move;
-                    for (int i = 0; i < gamestate->clients[player_num].hand_size; i++) {
-                        if (isLegalMove(gamestate, gamestate->clients[player_num].client_hand[i])) {
-                            legal_moves[num_legal_moves++] = gamestate->clients[player_num].client_hand[i];
+                    for (int i = 0; i < gamestate->clients[gamestate->current_player].hand_size; i++) {
+                        if (isLegalMove(gamestate, gamestate->clients[gamestate->current_player].client_hand[i])) {
+                            legal_moves[num_legal_moves++] = gamestate->clients[gamestate->current_player].client_hand[i];
                         }
 
                     }
@@ -453,13 +479,14 @@ int run_game(gamestate_t* gamestate)
 
             gamestate->current_player = gamestate->current_leader;
 
-            gamestate->current_leader = -1;
+            // gamestate->current_leader = -1;
 
         }
+        printf("update gamestate\n");
         /*Update after a round*/
         gamestate->spades_broken = false;
         update_points(gamestate);
-
+        printf("update points\n");
         for (int i = 0; i < 4; i++) {
             gamestate->clients[i].bid = -1;
             gamestate->clients[i].points = 0;
