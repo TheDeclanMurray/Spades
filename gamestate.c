@@ -266,6 +266,7 @@ void deal_cards(gamestate_t *state, int *cards)
 {
     for (int i = 0; i < 4; i++) {
         state->clients[i].hand_size = 13;
+        state->clients[i].client_hand = malloc(sizeof(int) * 13);
     }
     for (int i = 0; i < 52; i++)
     {
