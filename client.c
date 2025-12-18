@@ -1,3 +1,4 @@
+//Citation: Server Exercise in class
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,10 +10,16 @@
 #include "message.h"
 #include "socket.h"
 
+/**
+ * Listens for a message from server
+ * @return NULL
+ */
 void* listen_thread(void* args) {
+  //get socket from args
   intptr_t socket_fd = (intptr_t)args;
     // Read a message back from the server
     while(true) {
+      //create and print message
       char* in_message = receive_message(socket_fd);
       if (in_message == NULL) {
         perror("Failed to read message from server");
@@ -51,14 +58,14 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   } 
 
-// TODO: split sending and receving into two threads
+  //create a listener thread
   pthread_t listener;
   pthread_create(&listener, NULL, listen_thread, (void*)(intptr_t)socket_fd);
   while(true) {
-  
+    //get message
     fgets(message, sizeof(message), stdin);
 
-      // Send a message to the server
+    // Send a message to the server
     int rc = send_message(socket_fd, message);
     if (rc == -1) {
       perror("Failed to send message to server");
@@ -66,11 +73,7 @@ int main(int argc, char** argv) {
     } else if (strcmp(message, "quit\n") == 0) {
       break;
     }
-
-  //  printf("Server: %s", in_message);
   }
-
-
 
   // Close socket
   close(socket_fd);
