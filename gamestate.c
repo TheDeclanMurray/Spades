@@ -383,11 +383,25 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
         sprintf(init_message, "Player %s leads \n", gamestate->usernames[gamestate->current_player]);
         broadcast(init_message, gamestate->sockets);
 
-        for (int player = 0; player < 4; player++)
+        for (int i = 0; i < 4; i++)
         {
-            // TODO: receive player bid
-            int bid = -1; //Update
-            gamestate->clients[player].bid = bid;
+
+            send_dm("Enter your bid: \n", gamestate->sockets[gamestate->current_player]);
+            pthread_mutex_lock(lock);
+            pthread_cond_wait(cond, lock);
+            pthread_mutex_unlock(lock);
+
+            int bid = atoi(action); //Update
+            gamestate->clients[gamestate->current_player].bid = bid;
+
+            char bid_message[256];
+            sprintf(bid_message, "Player %s bid: %d\n", gamestate->usernames[gamestate->current_player], bid);
+
+            broadcast(bid_message, gamestate->sockets);
+            gamestate->current_player++;
+            if (gamestate->current_player == 4) {
+                gamestate->current_player = 0;
+            }
         }
 
         /* For each hand, do the following:*/
@@ -397,6 +411,9 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
             for (int j = 0; j < 4; j++) {
 
                 if (gamestate->num_bots < j + 1) { // THIS IS BROKEN DONT USE J
+
+                    send_dm("Enter your card <SUIT><RANK>:\n", gamestate->sockets[gamestate->current_player]);
+
                     /* If we are a real player*/
                     pthread_mutex_lock(lock);
                     pthread_cond_wait(cond, lock);
@@ -467,6 +484,9 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
             }
             /* Update after each hand*/
             //Increment points for winning client
+            char winner[256];
+            sprintf(winner, "%s won that hand!\n", gamestate->usernames[gamestate->current_leader]);
+            broadcast(winner, gamestate->sockets);
             gamestate->clients[gamestate->current_leader].points++;
             
             gamestate->trick_suit = -1;
@@ -482,11 +502,14 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
             // gamestate->current_leader = -1;
 
         }
-        printf("update gamestate\n");
         /*Update after a round*/
         gamestate->spades_broken = false;
         update_points(gamestate);
-        printf("update points\n");
+
+        char points_totals[256];
+        sprintf(points_totals, "Current point totals: \n %s and %s: %d \n %s and %s: %d\n", gamestate->usernames[0], gamestate->usernames[2], gamestate->total_score_team1, gamestate->usernames[1], gamestate->usernames[3], gamestate->total_score_team2);
+        
+        broadcast(points_totals, gamestate->sockets);
         for (int i = 0; i < 4; i++) {
             gamestate->clients[i].bid = -1;
             gamestate->clients[i].points = 0;
