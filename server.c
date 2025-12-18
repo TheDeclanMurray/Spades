@@ -124,6 +124,14 @@ int main() {
   sleep(1);
   //start the game
   run_game(state, &lock, &cond, action);
+
+  /* Free all the memory*/
+  for (int i = 0; i < 4; i++) {
+    free(state->clients[i].client_hand);      
+  }
+  free(state->clients);
+  free(state);
+  
   //close server
   close(server_socket_fd);
 
