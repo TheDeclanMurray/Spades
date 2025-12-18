@@ -82,6 +82,20 @@ gamestate_t *init_game(int num_bots)
     return state;
 }
 
+//Would've been cool no need
+// char* update_board(gamestate_t* state) {
+//     //char init_message[256];
+//     //sprintf(init_message, "Player %s leads \n", gamestate->usernames[gamestate->current_player]);
+//     char board[256];
+//     char player_one[16];
+//     sprintf(player_one, "%.10s: []", state->usernames[0])
+
+//     sprintf(board, "Team 1 Points: %4d \t Team 2 Points: %4d\n Tricks Over: %4d \t Tricks Over: %4d\n ", state->total_score_team1, state->total_score_team2, state->tricks_over_team1, state->tricks_over_team2);
+    
+
+//     return board;
+// }
+
 /**
  * Returns true if card is legal play false otherwise
  */
@@ -162,6 +176,7 @@ char *find_card(int card) {
         char *formatted_nums[14] = {"0", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
         strcat(msg, suit_chars[suit]);
         strcat(msg, formatted_nums[num]);
+        strcat(msg, "\n");
     return msg;
 }
 
@@ -450,10 +465,15 @@ int run_game(gamestate_t* gamestate, pthread_mutex_t* lock, pthread_cond_t* cond
                         printf("Current leader is: %d\n", gamestate->current_leader);
                         printf("Current player is: %d\n", gamestate->current_player);
                         // TODO: broadcast the message
-                        // char* played_card_graphic = find_card(card_played);
+
+                        char* played_card = find_card(card_played);
+                        char card_played_message[26];
+                        sprintf(card_played_message, "%.10s played: ", gamestate->usernames[real_current_player]);
+                        strcat(card_played_message, played_card);
                         // // char* b_message = "working\n";
                         // printf("%s\n", played_card_graphic);
-                        // free(played_card_graphic);
+                        broadcast(card_played_message, gamestate->sockets);
+                        free(played_card);
                         char* player_hand = format_hand(gamestate->clients[real_current_player].client_hand, gamestate->clients[real_current_player].hand_size);
                         send_dm(player_hand, gamestate->sockets[real_current_player]);
                         // broadcast(b_message, gamestate -> sockets);
