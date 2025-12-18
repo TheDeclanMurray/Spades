@@ -666,5 +666,8 @@ int run_game(gamestate_t *gamestate, pthread_mutex_t *lock, pthread_cond_t *cond
         broadcast("Team 2 wins!", gamestate->sockets);
     }
 
+
+
+
     return 0;
 }
