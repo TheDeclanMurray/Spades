@@ -1,3 +1,4 @@
+//Citation: Server Exercise in class
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -15,21 +16,27 @@ int counter = 0;
 
 int bot_num = 0;
 gamestate_t *state;
-
+//initialize lock and condition variable
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 char action[256];
-
+/**
+ * Creates a client thread
+ * @return NULL
+ */
 void* client_thread(void* args) {
+  //gets socket from args
   intptr_t client_socket_fd = (intptr_t)args;
   char* current_username;
   int current_user_num;
+  //finds username
   for(int i = 0; i < 4; i++) {
     if(client_socket_fd == state -> sockets[i]) {
       current_username = state -> usernames[i];
       current_user_num = i;
     }
   }
+  //tells which player connected
   printf("%s connected!\n", current_username);
 
   while(true) {
@@ -39,14 +46,11 @@ void* client_thread(void* args) {
       perror("Failed to read message from client");
       exit(EXIT_FAILURE);
     } else if (strcmp(message, "quit\n") == 0) {
-      // TODO: send message "player i ragequit"
+      broadcast("A player quit. The game has ended", state -> sockets);
       break;
     }
-
-    // Print the message
-    printf("%s sent: %s\n", current_username, message);
     
-    // check if its users turn
+    // check if its users turn and sends message if it isn't
     if (state->current_player != current_user_num){
       char* rebuke = "Not your turn\n";
       send_dm(rebuke, state->sockets[current_user_num]);
@@ -57,19 +61,12 @@ void* client_thread(void* args) {
     // signal condition variable 
     pthread_mutex_lock(&lock);
     pthread_cond_signal(&cond);
-    
     pthread_mutex_unlock(&lock);
-  
-
-    // char final_message[256];
-    // strcpy(final_message, current_username);
-    // strcat(final_message, ": ");
-    // strcat(final_message, message);
-    // broadcast(final_message);
 
     // Free the message string
     free(message);
   }
+  //close client socket
   close(client_socket_fd);
   return NULL;
 }
@@ -90,20 +87,22 @@ int main() {
     perror("listen failed");
     exit(EXIT_FAILURE);
   }
-
+  //set sockets to -1
   for (int i = 0; i < 4; i++){
     state -> sockets[i] = -1;
   }
-
+  //init print
   printf("Server listening on port %u\n", port);
 
   // adding the users
   while(counter < 4) {
     // Wait for a client to connect
-    printf("making new thread\n");
+
+    //create client
     pthread_t client;
 
     intptr_t client_socket_fd = server_socket_accept(server_socket_fd);
+    //update sockets
     state -> sockets[counter] = client_socket_fd;
     if (client_socket_fd == -1) {
       perror("accept failed");
@@ -118,12 +117,14 @@ int main() {
     } 
     state -> usernames[counter] = message;
     counter++;
-
+    //create client thread
     pthread_create(&client, NULL, client_thread, (void*)client_socket_fd);
   }
+  //sleep for a second after everyone has joined before running game
   sleep(1);
+  //start the game
   run_game(state, &lock, &cond, action);
-
+  //close server
   close(server_socket_fd);
 
 
